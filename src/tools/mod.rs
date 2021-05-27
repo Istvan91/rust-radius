@@ -106,6 +106,18 @@ pub fn bytes_to_integer(integer: &[u8; 4]) -> u32 {
     u32::from_be_bytes(*integer)
 }
 
+/// Converts u64 into vector of bytes
+///
+/// Should be used for any Attribute of type **integer64** to ensure value is encoded correctly
+pub fn integer64_to_bytes(integer: u64) -> Vec<u8> {
+    integer.to_be_bytes().to_vec()
+}
+
+/// Converts integer bytes into u64
+pub fn bytes_to_integer64(integer: &[u8; 8]) -> u64 {
+    u64::from_be_bytes(*integer)
+}
+
 /// Converts timestamp (u64) into vector of bytes
 ///
 /// Should be used for any Attribute of type **date** to ensure value is encoded correctly
