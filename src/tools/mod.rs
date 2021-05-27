@@ -17,14 +17,14 @@ use crate::protocol::error::RadiusError;
 ///
 /// Should be used for any Attribute of type **ipv6addr** or **ipv6prefix** to ensure value is encoded correctly
 pub fn ipv6_string_to_bytes(ipv6: &str) -> Result<Vec<u8>, RadiusError> {
-    let parsed_ipv6: Vec<&str> = ipv6.split("/").collect();
+    let mut parsed_ipv6 = ipv6.split("/");
     let mut bytes: Vec<u8>     = Vec::with_capacity(18);
-    let ipv6_address           = Ipv6Addr::from_str(parsed_ipv6[0]).map_err(|error| RadiusError::MalformedIpAddrError { error: error.to_string() })?;
+    let ipv6_address           = Ipv6Addr::from_str(parsed_ipv6.next().unwrap()).map_err(|err| RadiusError::MalformedIpAddrError { error: err.to_string() })?;
 
-    if parsed_ipv6.len() == 2 {
-        bytes.append( &mut u16_to_be_bytes(parsed_ipv6[1].parse::<u16>().unwrap()).to_vec() )
+    if let Some(netmask) = parsed_ipv6.next() {
+        bytes.extend(&u16_to_be_bytes(netmask.parse::<u16>().map_err(|err| RadiusError::MalformedIpAddrError {error: err.to_string()})?));
     }
-    bytes.append(&mut ipv6_address.octets().to_vec());
+    bytes.extend(&ipv6_address.octets());
     Ok(bytes)
 }
 
@@ -33,7 +33,7 @@ pub fn bytes_to_ipv6_string(ipv6: &[u8]) -> Result<String, RadiusError> {
     if ipv6.len() == 18 {
         // Case with subnet
         let subnet = u16_from_be_bytes(&ipv6[0..2]);
-        let ipv6_string = Ipv6Addr::new(
+        let ipv6 = Ipv6Addr::new(
             u16_from_be_bytes(&ipv6[2..4]),
             u16_from_be_bytes(&ipv6[4..6]),
             u16_from_be_bytes(&ipv6[6..8]),
@@ -42,8 +42,8 @@ pub fn bytes_to_ipv6_string(ipv6: &[u8]) -> Result<String, RadiusError> {
             u16_from_be_bytes(&ipv6[12..14]),
             u16_from_be_bytes(&ipv6[14..16]),
             u16_from_be_bytes(&ipv6[16..]),
-            ).to_string();
-        Ok(format!("{}/{}",ipv6_string, subnet))
+            );
+        Ok(format!("{}/{}",ipv6, subnet))
     } else {
         // Case without subnet
         Ok(Ipv6Addr::new(
