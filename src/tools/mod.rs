@@ -7,7 +7,7 @@ use crypto::digest::Digest;
 use crypto::md5::Md5;
 
 use std::str::FromStr;
-use std::net::Ipv6Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::convert::TryInto;
 
 use crate::protocol::error::RadiusError;
@@ -61,28 +61,37 @@ pub fn bytes_to_ipv6_string(ipv6: &[u8]) -> Result<String, RadiusError> {
 
 /// Converts IPv4 Address string into vector of bytes
 ///
-/// Should be used for any Attribute of type **ipaddr** to ensure value is encoded correctly
+/// Should be used for any Attribute of type **ipaddr** or **ipv4prefix** to ensure value is encoded correctly
 pub fn ipv4_string_to_bytes(ipv4: &str) -> Result<Vec<u8>, RadiusError> {
-    if ipv4.contains("/") {
-        return Err( RadiusError::MalformedIpAddrError { error: format!("Subnets are not supported for IPv4: {}", ipv4) } )
+    let mut splitted = ipv4.split("/");
+    let ipv4 = splitted.next().unwrap().parse::<Ipv4Addr>().map_err(|err| RadiusError::MalformedIpAddrError { error: err.to_string() })?;
+    let mut bytes: Vec<u8> = Vec::with_capacity(6);
+    if let Some(netmask) = splitted.next() {
+        bytes.push(0);
+        bytes.push(netmask.parse::<u8>().map_err(|err| RadiusError::MalformedIpAddrError { error: err.to_string() })?);
     }
-
-    let mut bytes: Vec<u8> = Vec::with_capacity(4);
-    for group in ipv4.trim().split(".").map(|group| group.parse::<u8>().unwrap()) {
-        bytes.push(group);
-    }
+    bytes.extend_from_slice(&ipv4.octets());
 
     Ok(bytes)
 }
 
 /// Converts IPv4 bytes into IPv4 string
 pub fn bytes_to_ipv4_string(ipv4: &[u8]) -> Result<String, RadiusError> {
-    if ipv4.len() != 4 {
-        return Err( RadiusError::MalformedIpAddrError { error: format!("Malformed IPv4: {:?}", ipv4) } )
-    }
-
-    let ipv4_string: Vec<String> = ipv4.iter().map(|group| group.to_string()).collect();
-    Ok(ipv4_string.join("."))
+    let mut buf = [0u8; 4];
+    Ok(match ipv4.len() {
+        4 => {
+            buf.copy_from_slice(ipv4);
+            Ipv4Addr::from(buf).to_string()
+        }
+        6 => {
+            let netmask = u8::from(ipv4[1]);
+            buf.copy_from_slice(&ipv4[2..]);
+            format!("{}/{}", Ipv4Addr::from(buf), netmask)
+        }
+        _ => {
+            return Err(RadiusError::MalformedIpAddrError { error: format!("Maleformed IPv4 {:?}", ipv4)});
+        }
+    })
 }
 
 /// Converts u32 into vector of bytes
@@ -344,11 +353,26 @@ mod tests {
     }
 
     #[test]
+    fn test_ipv4_string_to_bytes_w_subnet() {
+        let ipv4_bytes = ipv4_string_to_bytes("192.1.10.0/30").unwrap();
+
+        assert_eq!(ipv4_bytes, [0, 30, 192, 1, 10, 0]);
+    }
+
+    #[test]
     fn test_ipv4_bytes_to_string() {
         let ipv4_bytes = vec![192, 1, 10, 1];
         let ipv4_string = bytes_to_ipv4_string(&ipv4_bytes).unwrap();
 
         assert_eq!(ipv4_string, "192.1.10.1".to_string());
+    }
+
+    #[test]
+    fn test_ipv4_w_subnet_bytes_to_string() {
+        let ipv4_bytes = vec![0, 30, 192, 1, 10, 0];
+        let ipv4_string = bytes_to_ipv4_string(&ipv4_bytes).unwrap();
+
+        assert_eq!(ipv4_string, "192.1.10.0/30".to_string());
     }
 
     #[test]
